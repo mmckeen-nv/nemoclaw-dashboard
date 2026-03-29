@@ -202,7 +202,11 @@ export default function SandboxList({
                           if (data.ok) {
                             setTerminalMessage(`Terminal probe succeeded for ${selectedSandbox}: ${data.output || 'attached'}`)
                           } else {
-                            setTerminalMessage(data.error || 'Failed to attach to OpenShell terminal.')
+                            const inspectRes = await fetch(`/api/openshell/terminal/introspect?sandboxId=${encodeURIComponent(selectedSandbox)}`)
+                            const inspectData = await inspectRes.json()
+                            setTerminalMessage(inspectData.ok
+                              ? `Terminal probe failed. Pod introspection for ${selectedSandbox}: ${inspectData.raw}`
+                              : (data.error || 'Failed to attach to OpenShell terminal.'))
                           }
                         } catch (error) {
                           setTerminalMessage('Failed to attach to OpenShell terminal.')
