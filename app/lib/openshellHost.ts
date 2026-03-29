@@ -20,9 +20,21 @@ export async function dockerExecInOpenShell(command: string) {
 }
 
 export async function probeSandboxShell(podName: string) {
-  return dockerExecInOpenShell(
-    `kubectl -n ${OPENSHELL_NAMESPACE} exec ${podName} -- sh -lc 'echo OPENSHELL_OK && pwd && whoami'`
-  )
+  const attempts = [
+    `kubectl -n ${OPENSHELL_NAMESPACE} exec ${podName} -- /bin/sh -lc 'echo OPENSHELL_OK && pwd && whoami'`,
+    `kubectl -n ${OPENSHELL_NAMESPACE} exec ${podName} -- /busybox/sh -lc 'echo OPENSHELL_OK && pwd && whoami'`,
+    `kubectl -n ${OPENSHELL_NAMESPACE} exec ${podName} -- env`,
+  ]
+
+  let lastError: unknown
+  for (const command of attempts) {
+    try {
+      return await dockerExecInOpenShell(command)
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Failed to probe sandbox shell')
 }
 
 export function getOpenClawDashboardUrl() {
