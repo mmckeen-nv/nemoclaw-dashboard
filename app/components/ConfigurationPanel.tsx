@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useMemo, useState } from "react"
+import { SECURITY_PRESETS, getSecurityPreset, type OpenShellPolicyShape, type SecurityPresetId } from "../lib/securityPresets"
 
 type LandlockCompatibility = "best_effort" | "hard_requirement"
 type EndpointProtocol = "" | "rest"
@@ -33,37 +34,11 @@ interface NetworkPolicyBlock {
   binaries: NetworkBinary[]
 }
 
-interface OpenShellPolicy {
-  version: number
-  filesystem_policy: {
-    include_workdir: boolean
-    read_only: string[]
-    read_write: string[]
-  }
-  landlock: {
-    compatibility: LandlockCompatibility
-  }
-  process: {
-    run_as_user: string
-    run_as_group: string
-  }
-  network_policies: Record<string, {
-    name?: string
-    endpoints: Array<{
-      host: string
-      port: number
-      protocol?: string
-      tls?: string
-      enforcement?: string
-      access?: string
-      rules?: Array<{ allow: { method: string; path: string } }>
-    }>
-    binaries: Array<{ path: string }>
-  }>
-}
+type OpenShellPolicy = OpenShellPolicyShape
 
 interface ConfigurationPanelProps {
   sandboxId: string
+  mode?: 'existing' | 'create'
 }
 
 function FieldHelp({ text }: { text: string }) {
@@ -77,10 +52,12 @@ function FieldHelp({ text }: { text: string }) {
   )
 }
 
-function Badge({ children, tone }: { children: React.ReactNode; tone: "dynamic" | "static" }) {
+function Badge({ children, tone }: { children: React.ReactNode; tone: "dynamic" | "static" | "danger" }) {
   const cls = tone === "dynamic"
     ? "bg-[rgba(118,185,0,0.12)] text-[var(--nvidia-green)] border-[rgba(118,185,0,0.35)]"
-    : "bg-[rgba(245,158,11,0.10)] text-amber-400 border-[rgba(245,158,11,0.35)]"
+    : tone === "danger"
+      ? "bg-[rgba(220,38,38,0.12)] text-red-400 border-[rgba(220,38,38,0.35)]"
+      : "bg-[rgba(245,158,11,0.10)] text-amber-400 border-[rgba(245,158,11,0.35)]"
   return <span className={`text-[10px] uppercase tracking-wider border px-2 py-1 rounded-sm ${cls}`}>{children}</span>
 }
 
@@ -184,14 +161,19 @@ function blocksToPolicy(blocks: NetworkPolicyBlock[]): OpenShellPolicy["network_
   return out
 }
 
-export default function ConfigurationPanel({ sandboxId }: ConfigurationPanelProps) {
+export default function ConfigurationPanel({ sandboxId, mode = 'existing' }: ConfigurationPanelProps) {
   const [policy, setPolicy] = useState<OpenShellPolicy>(defaultPolicy)
   const [blocks, setBlocks] = useState<NetworkPolicyBlock[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(mode === 'existing')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState("")
+  const [selectedPreset, setSelectedPreset] = useState<SecurityPresetId | ''>('')
 
   useEffect(() => {
+    if (mode === 'create') {
+      setLoading(false)
+      return
+    }
     let active = true
     ;(async () => {
       try {
@@ -211,9 +193,20 @@ export default function ConfigurationPanel({ sandboxId }: ConfigurationPanelProp
       }
     })()
     return () => { active = false }
-  }, [sandboxId])
+  }, [sandboxId, mode])
 
   const assembledPolicy = useMemo(() => ({ ...policy, network_policies: blocksToPolicy(blocks) }), [policy, blocks])
+  const activePreset = selectedPreset ? getSecurityPreset(selectedPreset) : null
+  const showDangerWarning = activePreset?.id === 'spicy' || activePreset?.id === 'ultra-lobster'
+
+  function applyPreset(presetId: SecurityPresetId) {
+    const preset = getSecurityPreset(presetId)
+    if (!preset) return
+    setSelectedPreset(presetId)
+    setPolicy(preset.policy)
+    setBlocks(policyBlocksFromPolicy(preset.policy))
+    setMessage(`${preset.label} applied. Review before saving.${preset.id === 'spicy' || preset.id === 'ultra-lobster' ? ' Warning: this preset is intentionally permissive.' : ''}`)
+  }
 
   async function savePolicy() {
     try {
@@ -222,11 +215,13 @@ export default function ConfigurationPanel({ sandboxId }: ConfigurationPanelProp
       const res = await fetch(`/api/sandbox/${encodeURIComponent(sandboxId)}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ policy: assembledPolicy }),
+        body: JSON.stringify({ policy: assembledPolicy, preset: selectedPreset || null, mode }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Failed to save policy")
-      setMessage("Policy saved. Dynamic network policy can apply live; static sections require sandbox recreation.")
+      setMessage(mode === 'create'
+        ? 'Preset and policy prepared for new sandbox creation. Static sections will apply at create time.'
+        : 'Policy saved. Dynamic network policy can apply live; static sections require sandbox recreation.')
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to save policy")
     } finally {
@@ -250,7 +245,7 @@ export default function ConfigurationPanel({ sandboxId }: ConfigurationPanelProp
   return (
     <div className="panel p-6 mt-6 border-t-2 border-[var(--nvidia-green)]">
       <div className="flex items-center justify-between mb-6 pb-4 border-b border-[var(--border-subtle)]">
-        <h4 className="text-sm font-semibold text-[var(--foreground)] uppercase tracking-wider">{sandboxId} — OPENSHELL POLICY</h4>
+        <h4 className="text-sm font-semibold text-[var(--foreground)] uppercase tracking-wider">{sandboxId} — {mode === 'create' ? 'NEW SANDBOX PRESET + POLICY' : 'OPENSHELL POLICY'}</h4>
         <div className="flex gap-2">
           <Badge tone="static">Static / Recreate Required</Badge>
           <Badge tone="dynamic">Dynamic / Apply Live</Badge>
@@ -260,6 +255,51 @@ export default function ConfigurationPanel({ sandboxId }: ConfigurationPanelProp
       {loading ? <div className="text-sm text-[var(--foreground-dim)]">Loading policy…</div> : (
         <div className="space-y-8">
           <section className="space-y-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <h5 className="text-xs uppercase tracking-wider text-[var(--foreground)]">Security Presets</h5>
+                <p className="text-xs text-[var(--foreground-dim)] mt-1">Use a canned profile for new sandboxes or switch an existing sandbox policy baseline on the fly.</p>
+              </div>
+              <div className="min-w-[260px]">
+                <select
+                  value={selectedPreset}
+                  onChange={(e) => {
+                    const value = e.target.value as SecurityPresetId | ''
+                    setSelectedPreset(value)
+                    if (value) applyPreset(value)
+                  }}
+                  className="w-full rounded-sm border border-[var(--border-subtle)] bg-[var(--background-tertiary)] px-3 py-2 text-xs font-mono text-[var(--foreground)]"
+                >
+                  <option value="">Select preset…</option>
+                  {SECURITY_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>{preset.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {activePreset && (
+              <div className="rounded-sm border border-[var(--border-subtle)] bg-[var(--background-tertiary)] p-4 space-y-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm font-semibold text-[var(--foreground)] uppercase tracking-wider">{activePreset.label}</span>
+                  <Badge tone={showDangerWarning ? 'danger' : 'dynamic'}>{activePreset.danger.replace('-', ' ')}</Badge>
+                  {showDangerWarning && <Badge tone="danger">Dangerous / Permissive</Badge>}
+                </div>
+                <p className="text-sm text-[var(--foreground-dim)]">{activePreset.summary}</p>
+                {(activePreset.id === 'spicy' || activePreset.id === 'ultra-lobster') && (
+                  <div className="rounded-sm border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+                    Warning: {activePreset.label} may be dangerous due to its permissive security stance. Use only on trusted lab workloads.
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-[var(--foreground-dim)] mb-2">Preset exec allowlist</p>
+                  <pre className="overflow-auto rounded-sm border border-[var(--border-subtle)] bg-[var(--background)] p-3 text-[11px] text-[var(--foreground)]">{activePreset.execAllowlist.paths.join('\n')}</pre>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-4">
             <div className="flex items-center gap-3"><h5 className="text-xs uppercase tracking-wider text-[var(--foreground)]">Filesystem Policy</h5><Badge tone="static">Static</Badge></div>
             <label className="flex items-center gap-3 text-sm text-[var(--foreground)] font-mono">
               <input type="checkbox" checked={policy.filesystem_policy.include_workdir} onChange={(e) => setPolicy({ ...policy, filesystem_policy: { ...policy.filesystem_policy, include_workdir: e.target.checked } })} />
@@ -267,11 +307,8 @@ export default function ConfigurationPanel({ sandboxId }: ConfigurationPanelProp
               <FieldHelp text="Automatically adds the agent working directory to read_write. Static: changing this requires recreating the sandbox." />
             </label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <TextListEditor label="Read-only paths" tooltipText="Absolute paths the sandbox can read but not modify. Paths not listed are inaccessible." value={policy.filesystem_policy.read_only} onChange={(v) => setPolicy({ ...policy, filesystem_policy: { ...policy.filesystem_policy, read_only: v } })} placeholder="/usr
-/lib
-/etc" />
-              <TextListEditor label="Read-write paths" tooltipText="Absolute paths the sandbox can read and write. Keep this scoped; broad paths are rejected." value={policy.filesystem_policy.read_write} onChange={(v) => setPolicy({ ...policy, filesystem_policy: { ...policy.filesystem_policy, read_write: v } })} placeholder="/sandbox
-/tmp" />
+              <TextListEditor label="Read-only paths" tooltipText="Absolute paths the sandbox can read but not modify. Paths not listed are inaccessible." value={policy.filesystem_policy.read_only} onChange={(v) => setPolicy({ ...policy, filesystem_policy: { ...policy.filesystem_policy, read_only: v } })} placeholder="/usr\n/lib\n/etc" />
+              <TextListEditor label="Read-write paths" tooltipText="Absolute paths the sandbox can read and write. Keep this scoped; broad paths are rejected." value={policy.filesystem_policy.read_write} onChange={(v) => setPolicy({ ...policy, filesystem_policy: { ...policy.filesystem_policy, read_write: v } })} placeholder="/sandbox\n/tmp" />
             </div>
           </section>
 
@@ -332,7 +369,7 @@ export default function ConfigurationPanel({ sandboxId }: ConfigurationPanelProp
           </section>
 
           <section className="space-y-3">
-            <div className="flex items-center justify-between"><h5 className="text-xs uppercase tracking-wider text-[var(--foreground)]">Policy JSON Preview</h5><button onClick={savePolicy} disabled={saving} className="px-4 py-2 rounded-sm bg-[var(--nvidia-green)] text-white text-xs font-mono uppercase tracking-wider disabled:opacity-50">{saving ? "Saving…" : "Save Policy"}</button></div>
+            <div className="flex items-center justify-between"><h5 className="text-xs uppercase tracking-wider text-[var(--foreground)]">Policy JSON Preview</h5><button onClick={savePolicy} disabled={saving} className="px-4 py-2 rounded-sm bg-[var(--nvidia-green)] text-white text-xs font-mono uppercase tracking-wider disabled:opacity-50">{saving ? "Saving…" : mode === 'create' ? 'Use For New Sandbox' : 'Save Policy'}</button></div>
             <pre className="overflow-auto rounded-sm border border-[var(--border-subtle)] bg-[var(--background-tertiary)] p-4 text-[11px] leading-5 text-[var(--foreground)]">{JSON.stringify(assembledPolicy, null, 2)}</pre>
             {message && <div className="text-sm text-[var(--foreground-dim)]">{message}</div>}
           </section>

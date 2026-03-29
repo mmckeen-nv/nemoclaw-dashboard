@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import Sidebar from './components/Sidebar'
 import SandboxList from './components/SandboxList'
+import ConfigurationPanel from './components/ConfigurationPanel'
 
 export default function Dashboard() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
@@ -83,14 +84,16 @@ export default function Dashboard() {
         <div className={isSubmenuOpen ? 'ml-72' : ''}>
           <div className="p-8">
             {isCreateMode ? (
-              <div className="panel p-8">
-                <h1 className="text-lg font-semibold text-[var(--nvidia-green)] uppercase tracking-wider mb-4">
-                  CREATE SANDBOX
-                </h1>
-                <p className="text-sm text-[var(--foreground-dim)]">
-                  Sandbox creation workflow will appear here. Configure parameters and deploy a new sandbox instance.
-                </p>
-                {/* TODO: Add creation form */}
+              <div className="space-y-6">
+                <div className="panel p-8">
+                  <h1 className="text-lg font-semibold text-[var(--nvidia-green)] uppercase tracking-wider mb-4">
+                    CREATE SANDBOX
+                  </h1>
+                  <p className="text-sm text-[var(--foreground-dim)]">
+                    Start from a named security preset, then refine the OpenShell policy before creating the sandbox.
+                  </p>
+                </div>
+                <ConfigurationPanel sandboxId="new-sandbox" mode="create" />
               </div>
             ) : isDestroyMode ? (
               <div className="panel p-8 border-2 border-[var(--status-stopped)]">
