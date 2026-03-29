@@ -6,8 +6,9 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     dashboardUrl,
+    proxiedUrl: '/api/openshell/dashboard/proxy',
     openInNewTab: true,
     loopbackOnly: true,
-    note: 'OpenClaw Dashboard is loopback-only on the host. For remote browser access, add a reverse proxy route or rebind the gateway.'
+    note: 'OpenClaw Dashboard is loopback-only on the host, so the web UI uses a local proxy route to expose it.'
   })
 }

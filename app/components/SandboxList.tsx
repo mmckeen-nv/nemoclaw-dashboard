@@ -181,9 +181,11 @@ export default function SandboxList({
                           const res = await fetch('/api/openshell/dashboard/open')
                           const data = await res.json()
                           setDashboardMessage(data.loopbackOnly
-                            ? `OpenClaw Dashboard detected at ${data.dashboardUrl}. It is loopback-only, so the next step is adding a proxy/open-in-new-tab bridge.`
+                            ? `OpenClaw Dashboard detected at ${data.dashboardUrl}. Opening proxied dashboard route.`
                             : `OpenClaw Dashboard: ${data.dashboardUrl}`)
-                          if (data.dashboardUrl && !data.loopbackOnly) {
+                          if (data.proxiedUrl) {
+                            window.open(data.proxiedUrl, '_blank', 'noopener,noreferrer')
+                          } else if (data.dashboardUrl && !data.loopbackOnly) {
                             window.open(data.dashboardUrl, '_blank', 'noopener,noreferrer')
                           }
                         } catch (error) {
