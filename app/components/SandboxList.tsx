@@ -178,11 +178,14 @@ export default function SandboxList({
                     <button
                       onClick={async () => {
                         try {
-                          const res = await fetch('/api/openshell/dashboard')
+                          const res = await fetch('/api/openshell/dashboard/open')
                           const data = await res.json()
                           setDashboardMessage(data.loopbackOnly
                             ? `OpenClaw Dashboard detected at ${data.dashboardUrl}. It is loopback-only, so the next step is adding a proxy/open-in-new-tab bridge.`
                             : `OpenClaw Dashboard: ${data.dashboardUrl}`)
+                          if (data.dashboardUrl) {
+                            window.open(data.dashboardUrl, '_blank', 'noopener,noreferrer')
+                          }
                         } catch (error) {
                           setDashboardMessage('Failed to resolve OpenClaw Dashboard endpoint.')
                         }
@@ -194,9 +197,13 @@ export default function SandboxList({
                     <button
                       onClick={async () => {
                         try {
-                          const res = await fetch(`/api/openshell/terminal?sandboxId=${encodeURIComponent(selectedSandbox)}`)
+                          const res = await fetch(`/api/openshell/terminal/open?sandboxId=${encodeURIComponent(selectedSandbox)}`)
                           const data = await res.json()
-                          setTerminalMessage(data.note || 'Terminal attach route reached.')
+                          if (data.ok) {
+                            setTerminalMessage(`Terminal probe succeeded for ${selectedSandbox}: ${data.output || 'attached'}`)
+                          } else {
+                            setTerminalMessage(data.error || 'Failed to attach to OpenShell terminal.')
+                          }
                         } catch (error) {
                           setTerminalMessage('Failed to attach to OpenShell terminal.')
                         }
