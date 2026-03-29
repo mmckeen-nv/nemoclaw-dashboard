@@ -11,6 +11,7 @@ export default function Dashboard() {
   const [selectedSandbox, setSelectedSandbox] = useState<string | null>(null)
   const [isCreateMode, setIsCreateMode] = useState(false)
   const [isDestroyMode, setIsDestroyMode] = useState(false)
+  const [activeView, setActiveView] = useState<'overview' | 'settings' | 'sandboxes'>('sandboxes')
   const [deletingSandboxId, setDeletingSandboxId] = useState<string | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
@@ -61,16 +62,33 @@ export default function Dashboard() {
         }}
         isCreateMode={isCreateMode}
         isDestroyMode={isDestroyMode}
+        activeView={activeView}
         onCreateClick={() => {
+          setActiveView('sandboxes')
           setIsCreateMode(true)
           setIsDestroyMode(false)
           setSelectedSandbox(null)
           setIsSubmenuOpen(true)
         }}
         onDestroyClick={() => {
+          setActiveView('sandboxes')
           setIsDestroyMode(true)
           setIsCreateMode(false)
           setIsSubmenuOpen(true)
+        }}
+        onOverviewClick={() => {
+          setActiveView('overview')
+          setIsCreateMode(false)
+          setIsDestroyMode(false)
+          setSelectedSandbox(null)
+          setIsSubmenuOpen(false)
+        }}
+        onSettingsClick={() => {
+          setActiveView('settings')
+          setIsCreateMode(false)
+          setIsDestroyMode(false)
+          setSelectedSandbox(null)
+          setIsSubmenuOpen(false)
         }}
         onExitMode={() => {
           setIsCreateMode(false)
@@ -83,7 +101,54 @@ export default function Dashboard() {
       <main className="ml-64 transition-all duration-300">
         <div className={isSubmenuOpen ? 'ml-72' : ''}>
           <div className="p-8">
-            {isCreateMode ? (
+            {activeView === 'overview' ? (
+              <div className="space-y-6">
+                <div className="panel p-8">
+                  <h1 className="text-lg font-semibold text-[var(--nvidia-green)] uppercase tracking-wider mb-4">
+                    OVERVIEW
+                  </h1>
+                  <p className="text-sm text-[var(--foreground-dim)] mb-6">
+                    Operational summary of the current OpenShell environment and preset posture.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="metric p-4">
+                      <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">HOST</p>
+                      <p className="text-lg font-mono text-[var(--nvidia-green)] mt-2">{hostIP}</p>
+                    </div>
+                    <div className="metric p-4">
+                      <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">VIEW</p>
+                      <p className="text-lg font-mono text-[var(--foreground)] mt-2">OVERVIEW</p>
+                    </div>
+                    <div className="metric p-4">
+                      <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">STATUS</p>
+                      <p className="text-lg font-mono text-[var(--nvidia-green)] mt-2">ONLINE</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="panel p-8">
+                  <h2 className="text-sm font-semibold text-[var(--foreground)] uppercase tracking-wider mb-4">Preset Ladder</h2>
+                  <div className="space-y-3 text-sm text-[var(--foreground-dim)]">
+                    <p><span className="text-[var(--foreground)] font-mono">Lockdown Mode</span> → minimum writable scope</p>
+                    <p><span className="text-[var(--foreground)] font-mono">Enterprise Mode</span> → controlled enterprise defaults</p>
+                    <p><span className="text-[var(--foreground)] font-mono">Medium-Spicy</span> → balanced dev workflow</p>
+                    <p><span className="text-[var(--foreground)] font-mono">Spicy</span> → broad engineering access, dangerous if misused</p>
+                    <p><span className="text-[var(--foreground)] font-mono">Ultra-Lobster</span> → maximum lab convenience, highly permissive</p>
+                  </div>
+                </div>
+              </div>
+            ) : activeView === 'settings' ? (
+              <div className="space-y-6">
+                <div className="panel p-8">
+                  <h1 className="text-lg font-semibold text-[var(--nvidia-green)] uppercase tracking-wider mb-4">
+                    SETTINGS
+                  </h1>
+                  <p className="text-sm text-[var(--foreground-dim)] mb-6">
+                    Global defaults and preset-driven policy controls for this dashboard instance.
+                  </p>
+                </div>
+                <ConfigurationPanel sandboxId="global-settings" mode="create" />
+              </div>
+            ) : isCreateMode ? (
               <div className="space-y-6">
                 <div className="panel p-8">
                   <h1 className="text-lg font-semibold text-[var(--nvidia-green)] uppercase tracking-wider mb-4">

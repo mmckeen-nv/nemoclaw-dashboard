@@ -1,5 +1,6 @@
 "use client"
 import { useState, useEffect } from 'react'
+import ConfigurationPanel from './ConfigurationPanel'
 
 interface Sandbox {
   id: string
@@ -165,45 +166,49 @@ export default function SandboxList({
 
           {/* Selected Sandbox Details - Technical Data Panel */}
           {!isDestroyMode && selectedSandbox && (
-            <div className="panel p-6">
-              <div className="flex items-center justify-between mb-6 pb-4 border-b border-[var(--border-subtle)]">
-                <h4 className="text-sm font-semibold text-[var(--foreground)] uppercase tracking-wider">
-                  {sandboxes.find(s => s.id === selectedSandbox)?.name} — TELEMETRY
-                </h4>
-                <span className="text-[10px] text-[var(--foreground-dim)] font-mono">
-                  LIVE
-                </span>
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="metric p-4">
-                  <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">CPU</p>
-                  <p className="text-2xl font-mono text-[var(--nvidia-green)] mt-1">
-                    {telemetry.cpu.toFixed(1)}%
-                  </p>
+            <>
+              <div className="panel p-6">
+                <div className="flex items-center justify-between mb-6 pb-4 border-b border-[var(--border-subtle)]">
+                  <h4 className="text-sm font-semibold text-[var(--foreground)] uppercase tracking-wider">
+                    {sandboxes.find(s => s.id === selectedSandbox)?.name} — TELEMETRY
+                  </h4>
+                  <span className="text-[10px] text-[var(--foreground-dim)] font-mono">
+                    LIVE
+                  </span>
                 </div>
-                <div className="metric p-4">
-                  <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">MEMORY</p>
-                  <p className="text-2xl font-mono text-[var(--nvidia-green)] mt-1">
-                    {telemetry.memory.toFixed(1)}%
-                  </p>
-                </div>
-                <div className="metric p-4">
-                  <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">DISK</p>
-                  <p className="text-2xl font-mono text-[var(--nvidia-green)] mt-1">
-                    {telemetry.disk.toFixed(1)}%
-                  </p>
-                </div>
-                {telemetry.gpuTemperature && (
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="metric p-4">
-                    <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">GPU TEMP</p>
+                    <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">CPU</p>
                     <p className="text-2xl font-mono text-[var(--nvidia-green)] mt-1">
-                      {telemetry.gpuTemperature.toFixed(1)}°C
+                      {telemetry.cpu.toFixed(1)}%
                     </p>
                   </div>
-                )}
+                  <div className="metric p-4">
+                    <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">MEMORY</p>
+                    <p className="text-2xl font-mono text-[var(--nvidia-green)] mt-1">
+                      {telemetry.memory.toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="metric p-4">
+                    <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">DISK</p>
+                    <p className="text-2xl font-mono text-[var(--nvidia-green)] mt-1">
+                      {telemetry.disk.toFixed(1)}%
+                    </p>
+                  </div>
+                  {telemetry.gpuTemperature && (
+                    <div className="metric p-4">
+                      <p className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">GPU TEMP</p>
+                      <p className="text-2xl font-mono text-[var(--nvidia-green)] mt-1">
+                        {telemetry.gpuTemperature.toFixed(1)}°C
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+
+              <ConfigurationPanel sandboxId={selectedSandbox} mode="existing" />
+            </>
           )}
         </>
       )}
