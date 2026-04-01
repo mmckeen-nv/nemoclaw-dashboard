@@ -9,6 +9,7 @@ interface TelemetryData {
   gpuMemoryUsed?: number
   gpuMemoryTotal?: number
   gpuTemperature?: number
+  timestamp?: string
 }
 
 interface Sandbox {
@@ -26,17 +27,15 @@ export default function TelemetryDisplay() {
     disk: 0,
     gpuMemoryUsed: 0,
     gpuMemoryTotal: 0,
-    gpuTemperature: 0
+    gpuTemperature: 0,
   })
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Fetch sandboxes
   useEffect(() => {
     fetchSandboxes()
   }, [])
 
-  // Fetch telemetry when sandbox changes
   useEffect(() => {
     if (selectedSandbox) {
       fetchTelemetry(selectedSandbox)
@@ -49,13 +48,19 @@ export default function TelemetryDisplay() {
     try {
       const response = await fetch('/api/telemetry/real')
       const data = await response.json()
-      // Filter sandboxes from pod data
-      const sandboxList = (data.pods?.items || []).map((pod: any, index: number) => ({
-        id: pod.metadata?.name || `sandbox-${index}`,
-        name: pod.metadata?.name || `Sandbox ${index + 1}`,
-        ip: pod.status?.podIP || `10.42.0.${index + 1}`,
-        status: pod.status?.phase || 'Unknown'
-      }))
+      const sandboxList = Array.isArray(data?.sandboxes) && data.sandboxes.length > 0
+        ? data.sandboxes.map((sandbox: any, index: number) => ({
+            id: sandbox?.id || sandbox?.name || `sandbox-${index}`,
+            name: sandbox?.name || `Sandbox ${index + 1}`,
+            ip: sandbox?.sshHostAlias || 'N/A',
+            status: sandbox?.status || 'Unknown',
+          }))
+        : (data.pods?.items || []).map((pod: any, index: number) => ({
+            id: pod.metadata?.labels?.['openshell.ai/sandbox-id'] || pod.metadata?.name || `sandbox-${index}`,
+            name: pod.metadata?.name || `Sandbox ${index + 1}`,
+            ip: pod.status?.podIP || `10.42.0.${index + 1}`,
+            status: pod.status?.phase || 'Unknown',
+          }))
       setSandboxes(sandboxList)
     } catch (error) {
       console.error('Error fetching sandboxes:', error)
@@ -66,7 +71,7 @@ export default function TelemetryDisplay() {
 
   const fetchTelemetry = async (sandboxId: string) => {
     try {
-      const response = await fetch(`/api/telemetry/sandbox/${sandboxId}`)
+      const response = await fetch(`/api/telemetry/sandbox?sandboxId=${sandboxId}`)
       const data = await response.json()
       setTelemetry(data)
     } catch (error) {
@@ -84,7 +89,7 @@ export default function TelemetryDisplay() {
     }
   }
 
-  const handleSandboxClick = (sandboxId: string) => {
+  const handleSandboxClick = (sandboxId: string | null) => {
     setSelectedSandbox(selectedSandbox === sandboxId ? null : sandboxId)
   }
 
@@ -94,7 +99,6 @@ export default function TelemetryDisplay() {
 
   return (
     <div className="space-y-6">
-      {/* Sandbox Selection */}
       {sandboxes.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <h3 className="text-lg font-semibold mb-3 dark:text-white">Select Sandbox</h3>
@@ -126,32 +130,10 @@ export default function TelemetryDisplay() {
         </div>
       )}
 
-      {/* Telemetry Gauges */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <SpeedometerGauge
-          value={telemetry.cpu}
-          max={100}
-          unit="%"
-          color="#76B900"
-          label="CPU Usage"
-          size="large"
-        />
-        <SpeedometerGauge
-          value={telemetry.memory}
-          max={100}
-          unit="%"
-          color="#76B900"
-          label="Memory Usage"
-          size="large"
-        />
-        <SpeedometerGauge
-          value={telemetry.disk}
-          max={100}
-          unit="%"
-          color="#76B900"
-          label="Disk Usage"
-          size="large"
-        />
+        <SpeedometerGauge value={telemetry.cpu} max={100} unit="%" color="#76B900" label="CPU Usage" size="large" />
+        <SpeedometerGauge value={telemetry.memory} max={100} unit="%" color="#76B900" label="Memory Usage" size="large" />
+        <SpeedometerGauge value={telemetry.disk} max={100} unit="%" color="#76B900" label="Disk Usage" size="large" />
         {telemetry.gpuMemoryUsed !== undefined && telemetry.gpuMemoryTotal && (
           <SpeedometerGauge
             value={(telemetry.gpuMemoryUsed / telemetry.gpuMemoryTotal) * 100}
@@ -164,36 +146,32 @@ export default function TelemetryDisplay() {
         )}
       </div>
 
-      {/* Additional Metrics */}
       {telemetry.gpuTemperature && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold mb-4 dark:text-white">GPU Metrics</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Temperature</p>
-              <p className="text-2xl font-bold text-blue-600">
-                {telemetry.gpuTemperature.toFixed(1)}°C
-              </p>
+              <p className="text-2xl font-bold text-blue-600">{telemetry.gpuTemperature.toFixed(1)}°C</p>
             </div>
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Memory Used</p>
               <p className="text-2xl font-bold text-blue-600">
-                {telemetry.gpuMemoryUsed.toFixed(1)} / {telemetry.gpuMemoryTotal.toFixed(1)} GB
+                {telemetry.gpuMemoryUsed?.toFixed(1)} / {telemetry.gpuMemoryTotal?.toFixed(1)} GB
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Selected Sandbox Info */}
       {selectedSandbox && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <h3 className="text-lg font-semibold mb-2 dark:text-white">Selected Sandbox</h3>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            IP: {sandboxes.find(s => s.id === selectedSandbox)?.ip}
+            IP: {sandboxes.find((s) => s.id === selectedSandbox)?.ip}
           </p>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Status: {sandboxes.find(s => s.id === selectedSandbox)?.status}
+            Status: {sandboxes.find((s) => s.id === selectedSandbox)?.status}
           </p>
         </div>
       )}

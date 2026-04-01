@@ -9,6 +9,7 @@ interface TelemetryData {
   gpuMemoryUsed?: number
   gpuMemoryTotal?: number
   gpuTemperature?: number
+  timestamp?: string
 }
 
 interface SandboxConfig {
@@ -54,7 +55,7 @@ export default function SandboxDetails({
     if (!sandboxId) return
     setLoading(true)
     try {
-      const response = await fetch('/api/telemetry/combined')
+      const response = await fetch(`/api/telemetry/sandbox?sandboxId=${encodeURIComponent(sandboxId)}`)
       const data = await response.json()
       setTelemetry(data)
     } catch (error) {

@@ -5,7 +5,7 @@ interface Sandbox {
   id: string
   name: string
   ip: string
-  status: 'running' | 'stopped' | 'unknown'
+  status: 'running' | 'pending' | 'stopped' | 'unknown'
 }
 
 interface SidebarProps {
@@ -46,24 +46,27 @@ export default function Sidebar({
       try {
         const response = await fetch('/api/telemetry/real')
         const data = await response.json()
-        
-        const items = data?.pods?.items || []
-        if (!Array.isArray(items)) {
-          setSandboxes([])
-          return
-        }
-        
-        const sandboxList = items
-          .filter((pod: any) => pod?.metadata?.namespace === 'agent-sandbox-system')
-          .map((pod: any) => ({
-            id: pod.metadata?.name || 'unknown',
-            name: pod.metadata?.name || 'Unknown Sandbox',
-            ip: pod.status?.podIP || 'N/A',
-            status: pod.status?.phase === 'Running' ? 'running' : 
-                    pod.status?.phase === 'Pending' ? 'pending' : 
-                    pod.status?.phase === 'Stopped' ? 'stopped' : 'unknown' as const
-          }))
-        
+
+        const sandboxList: Sandbox[] = Array.isArray(data?.sandboxes)
+          ? data.sandboxes.map((sandbox: any) => ({
+              id: sandbox?.name || sandbox?.id || 'unknown',
+              name: sandbox?.name || sandbox?.id || 'Unknown Sandbox',
+              ip: sandbox?.sshHostAlias || 'N/A',
+              status: sandbox?.status === 'Running' ? 'running' :
+                      sandbox?.status === 'Pending' ? 'pending' :
+                      sandbox?.status === 'Stopped' ? 'stopped' : 'unknown' as const
+            }))
+          : Array.isArray(data?.pods?.items)
+            ? data.pods.items.map((pod: any) => ({
+                id: pod.metadata?.name || 'unknown',
+                name: pod.metadata?.name || 'Unknown Sandbox',
+                ip: pod.status?.podIP || 'N/A',
+                status: pod.status?.phase === 'Running' ? 'running' :
+                        pod.status?.phase === 'Pending' ? 'pending' :
+                        pod.status?.phase === 'Stopped' ? 'stopped' : 'unknown' as const
+              }))
+            : []
+
         setSandboxes(sandboxList)
       } catch (error) {
         console.error('Error fetching sandboxes in Sidebar:', error)

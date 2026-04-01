@@ -1,39 +1,34 @@
 import { NextResponse } from "next/server"
+import { inspectSandbox, readHostTelemetry } from "../../../lib/openshellHost"
 
-export async function GET(
-  request: Request,
-  { params }: { params: { sandboxId: string } }
-) {
+export async function GET(request: Request) {
   try {
-    // In a real implementation, this would fetch specific telemetry for the selected sandbox
-    // For now, return realistic mock data based on the selected sandbox
+    const { searchParams } = new URL(request.url)
+    const sandboxId = searchParams.get("sandboxId")
 
-    const { sandboxId } = params
-
-    // Simulate different telemetry for different sandboxes
-    const baseValues = {
-      cpu: 30 + Math.random() * 40,
-      memory: 40 + Math.random() * 30,
-      disk: 50 + Math.random() * 15
+    if (!sandboxId) {
+      return NextResponse.json({ error: "sandboxId is required" }, { status: 400 })
     }
 
-    // Add some variation based on sandbox name
-    const sandboxVariation = sandboxId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+    const telemetry = await readHostTelemetry()
+    const inspection = await inspectSandbox(sandboxId)
 
-    const data = {
-      cpu: Math.min(100, baseValues.cpu + (sandboxVariation % 20)),
-      memory: Math.min(100, baseValues.memory + (sandboxVariation % 15)),
-      disk: baseValues.disk + (sandboxVariation % 5),
-      gpuMemoryUsed: 20 + Math.random() * 60,
-      gpuMemoryTotal: 80,
-      gpuTemperature: 65 + Math.random() * 20,
-      timestamp: new Date().toISOString()
-    }
-
-    return NextResponse.json(data)
+    return NextResponse.json({
+      ...telemetry,
+      sandbox: {
+        id: inspection.id,
+        name: inspection.name,
+        namespace: inspection.namespace,
+        phase: inspection.phase,
+        sshHostAlias: inspection.sshHostAlias,
+      },
+      note: "Live host telemetry plus OpenShell sandbox metadata. Sandbox-internal metrics still need an SSH-backed collector.",
+    })
   } catch (error) {
     return NextResponse.json(
-      { error: 'Failed to fetch sandbox telemetry' },
+      {
+        error: error instanceof Error ? error.message : "Failed to fetch sandbox telemetry",
+      },
       { status: 500 }
     )
   }

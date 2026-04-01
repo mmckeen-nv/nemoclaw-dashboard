@@ -9,6 +9,7 @@ interface TelemetryData {
   gpuMemoryUsed?: number
   gpuMemoryTotal?: number
   gpuTemperature?: number
+  timestamp?: string
 }
 
 interface Sandbox {
@@ -19,9 +20,7 @@ interface Sandbox {
 }
 
 export default function CompactTelemetryDisplay() {
-  const [telemetry, setTelemetry] = useState<TelemetryData>({
-    cpu: 0, memory: 0, disk: 0
-  })
+  const [telemetry, setTelemetry] = useState<TelemetryData>({ cpu: 0, memory: 0, disk: 0 })
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedSandbox, setSelectedSandbox] = useState<string | null>(null)
@@ -53,12 +52,19 @@ export default function CompactTelemetryDisplay() {
     try {
       const response = await fetch('/api/telemetry/real')
       const data = await response.json()
-      const sandboxList = (data.pods?.items || []).slice(0, 5).map((pod: any, index: number) => ({
-        id: pod.metadata?.name || `sandbox-${index}`,
-        name: pod.metadata?.name?.substring(0, 15) || `Sandbox ${index + 1}`,
-        ip: pod.status?.podIP || `10.42.0.${index + 1}`,
-        status: pod.status?.phase || 'Unknown'
-      }))
+      const sandboxList = (Array.isArray(data?.sandboxes) && data.sandboxes.length > 0
+        ? data.sandboxes.map((sandbox: any, index: number) => ({
+            id: sandbox?.id || sandbox?.name || `sandbox-${index}`,
+            name: (sandbox?.name || `Sandbox ${index + 1}`).substring(0, 15),
+            ip: sandbox?.sshHostAlias || 'N/A',
+            status: sandbox?.status || 'Unknown',
+          }))
+        : (data.pods?.items || []).map((pod: any, index: number) => ({
+            id: pod.metadata?.labels?.['openshell.ai/sandbox-id'] || pod.metadata?.name || `sandbox-${index}`,
+            name: pod.metadata?.name?.substring(0, 15) || `Sandbox ${index + 1}`,
+            ip: pod.status?.podIP || `10.42.0.${index + 1}`,
+            status: pod.status?.phase || 'Unknown',
+          }))).slice(0, 5)
       setSandboxes(sandboxList)
     } catch (error) {
       console.error('Error fetching sandboxes:', error)
@@ -68,6 +74,17 @@ export default function CompactTelemetryDisplay() {
   }
 
   const fetchTelemetry = async () => {
+    if (!selectedSandbox) return
+    try {
+      const response = await fetch(`/api/telemetry/sandbox?sandboxId=${encodeURIComponent(selectedSandbox)}`)
+      const data = await response.json()
+      setTelemetry(data)
+    } catch (error) {
+      console.error('Error fetching telemetry:', error)
+    }
+  }
+
+  const fetchCombinedTelemetry = async () => {
     try {
       const response = await fetch('/api/telemetry/combined')
       const data = await response.json()
@@ -76,8 +93,6 @@ export default function CompactTelemetryDisplay() {
       console.error('Error fetching telemetry:', error)
     }
   }
-
-  const fetchCombinedTelemetry = fetchTelemetry
 
   if (loading) {
     return (
@@ -91,7 +106,6 @@ export default function CompactTelemetryDisplay() {
 
   return (
     <div className="space-y-4">
-      {/* Sandbox Selector - Technical */}
       {sandboxes.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-4">
           <button
@@ -120,29 +134,10 @@ export default function CompactTelemetryDisplay() {
         </div>
       )}
 
-      {/* Main Metrics - 2x2 Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <CompactGauge
-          value={telemetry.cpu}
-          max={100}
-          unit="%"
-          color="#76B900"
-          label="CPU"
-        />
-        <CompactGauge
-          value={telemetry.memory}
-          max={100}
-          unit="%"
-          color="#76B900"
-          label="MEMORY"
-        />
-        <CompactGauge
-          value={telemetry.disk}
-          max={100}
-          unit="%"
-          color="#76B900"
-          label="DISK"
-        />
+        <CompactGauge value={telemetry.cpu} max={100} unit="%" color="#76B900" label="CPU" />
+        <CompactGauge value={telemetry.memory} max={100} unit="%" color="#76B900" label="MEMORY" />
+        <CompactGauge value={telemetry.disk} max={100} unit="%" color="#76B900" label="DISK" />
         {telemetry.gpuMemoryUsed !== undefined && telemetry.gpuMemoryTotal && (
           <CompactGauge
             value={(telemetry.gpuMemoryUsed / telemetry.gpuMemoryTotal) * 100}
@@ -154,16 +149,13 @@ export default function CompactTelemetryDisplay() {
         )}
       </div>
 
-      {/* Secondary Metrics - Technical Panels */}
       {(telemetry.gpuTemperature || telemetry.gpuMemoryUsed) && (
         <div className="grid grid-cols-2 gap-4">
           {telemetry.gpuTemperature && (
             <div className="metric p-4">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-[var(--foreground-dim)] uppercase tracking-wider">GPU TEMP</span>
-                <span className="text-xl font-mono text-[var(--nvidia-green)]">
-                  {telemetry.gpuTemperature.toFixed(1)}°C
-                </span>
+                <span className="text-xl font-mono text-[var(--nvidia-green)]">{telemetry.gpuTemperature.toFixed(1)}°C</span>
               </div>
             </div>
           )}
@@ -180,7 +172,6 @@ export default function CompactTelemetryDisplay() {
         </div>
       )}
 
-      {/* Status Bar - Technical */}
       <div className="flex items-center justify-between text-[10px] text-[var(--foreground-dim)] mt-4 pt-4 border-t border-[var(--border-subtle)]">
         <span className="font-mono uppercase tracking-wider">
           LAST UPDATE: {new Date(telemetry.timestamp || Date.now()).toLocaleTimeString()}
