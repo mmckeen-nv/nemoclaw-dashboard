@@ -23,34 +23,49 @@ async function execOpenShell(args: string[]) {
 }
 
 async function yamlToJson(yaml: string) {
-  const { stdout } = await execFileAsync(
-    "/usr/bin/ruby",
-    [
-      "-ryaml",
-      "-rjson",
-      "-e",
-      "print JSON.generate(YAML.safe_load(ARGF.read, permitted_classes: [Date, Time], aliases: true))",
-    ],
-    {
-      input: yaml,
-      maxBuffer: 10 * 1024 * 1024,
-    }
-  )
+  const tempDir = await mkdtemp(join(tmpdir(), "nemo-shell-dashboard-yaml-"))
+  const inputPath = join(tempDir, "input.yaml")
 
-  return JSON.parse(stdout || "null")
+  try {
+    await writeFile(inputPath, yaml, "utf8")
+    const { stdout } = await execFileAsync(
+      "/usr/bin/ruby",
+      [
+        "-ryaml",
+        "-rjson",
+        "-e",
+        "print JSON.generate(YAML.safe_load(ARGF.read, permitted_classes: [Date, Time], aliases: true))",
+        inputPath,
+      ],
+      {
+        maxBuffer: 10 * 1024 * 1024,
+      }
+    )
+
+    return JSON.parse(stdout || "null")
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {})
+  }
 }
 
 async function jsonToYaml(value: unknown) {
-  const { stdout } = await execFileAsync(
-    "/usr/bin/ruby",
-    ["-rjson", "-ryaml", "-e", "obj = JSON.parse(ARGF.read); print YAML.dump(obj)"],
-    {
-      input: JSON.stringify(value),
-      maxBuffer: 10 * 1024 * 1024,
-    }
-  )
+  const tempDir = await mkdtemp(join(tmpdir(), "nemo-shell-dashboard-json-"))
+  const inputPath = join(tempDir, "input.json")
 
-  return stdout
+  try {
+    await writeFile(inputPath, JSON.stringify(value), "utf8")
+    const { stdout } = await execFileAsync(
+      "/usr/bin/ruby",
+      ["-rjson", "-ryaml", "-e", "obj = JSON.parse(ARGF.read); print YAML.dump(obj)", inputPath],
+      {
+        maxBuffer: 10 * 1024 * 1024,
+      }
+    )
+
+    return stdout
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {})
+  }
 }
 
 function normalizeTransportError(error: unknown) {

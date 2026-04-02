@@ -9,6 +9,7 @@ interface Sandbox {
   ip: string
   status: 'running' | 'pending' | 'stopped' | 'unknown'
   ready: boolean
+  sshHostAlias?: string
 }
 
 interface TelemetryData {
@@ -59,18 +60,29 @@ export default function SandboxList({
       const response = await fetch('/api/telemetry/real')
       const data = await response.json()
 
-      const sandboxList = (data.pods?.items || [])
-        .filter((pod: any) => pod.metadata?.namespace === 'agent-sandbox-system')
-        .map((pod: any) => ({
-          id: pod.metadata?.name || 'unknown',
-          name: pod.metadata?.name || 'Unknown Sandbox',
-          namespace: pod.metadata?.namespace || 'unknown',
-          ip: pod.status?.podIP || 'N/A',
-          status: pod.status?.phase === 'Running' ? 'running' : 
-                  pod.status?.phase === 'Pending' ? 'pending' : 
-                  pod.status?.phase === 'Stopped' ? 'stopped' : 'unknown' as const,
-          ready: pod.status?.conditions?.find((c: any) => c.type === 'Ready')?.status === 'True'
-        }))
+      const sandboxList = Array.isArray(data.sandboxes) && data.sandboxes.length > 0
+        ? data.sandboxes.map((sandbox: any) => ({
+            id: sandbox.id || sandbox.name || 'unknown',
+            name: sandbox.name || 'Unknown Sandbox',
+            namespace: sandbox.namespace || 'openshell',
+            ip: sandbox.sshHostAlias || 'N/A',
+            status: (sandbox.status || 'unknown').toLowerCase() as Sandbox['status'],
+            ready: (sandbox.status || '').toLowerCase() === 'running',
+            sshHostAlias: sandbox.sshHostAlias || undefined,
+          }))
+        : (data.pods?.items || [])
+            .filter((pod: any) => pod.metadata?.namespace === 'agent-sandbox-system')
+            .map((pod: any) => ({
+              id: pod.metadata?.name || 'unknown',
+              name: pod.metadata?.name || 'Unknown Sandbox',
+              namespace: pod.metadata?.namespace || 'unknown',
+              ip: pod.status?.podIP || 'N/A',
+              status: pod.status?.phase === 'Running' ? 'running' : 
+                      pod.status?.phase === 'Pending' ? 'pending' : 
+                      pod.status?.phase === 'Stopped' ? 'stopped' : 'unknown' as const,
+              ready: pod.status?.conditions?.find((c: any) => c.type === 'Ready')?.status === 'True',
+              sshHostAlias: pod.status?.podIP || undefined,
+            }))
 
       setSandboxes(sandboxList)
       setLoading(false)
@@ -109,7 +121,7 @@ export default function SandboxList({
           </svg>
           <h3 className="text-sm font-semibold text-[var(--foreground)] uppercase tracking-wider">No Sandboxes Detected</h3>
           <p className="text-xs text-[var(--foreground-dim)] mt-2">
-            No sandboxes running in agent-sandbox-system namespace
+            No live OpenShell sandboxes reported yet
           </p>
         </div>
       ) : (
@@ -154,19 +166,22 @@ export default function SandboxList({
                 </div>
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-[var(--foreground-dim)] uppercase">IP Address</span>
-                    <span className="text-xs font-mono">{sandbox.ip}</span>
+                    <span className="text-[10px] text-[var(--foreground-dim)] uppercase">Attach Target</span>
+                    <span className="text-xs font-mono truncate max-w-[180px]" title={sandbox.ip}>{sandbox.ip}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-[var(--foreground-dim)] uppercase">Namespace</span>
                     <span className="text-xs font-mono truncate max-w-[120px]">{sandbox.namespace}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[10px] text-[var(--foreground-dim)] uppercase">Host Alias</span>
+                    <span className="text-xs font-mono truncate max-w-[140px]">{sandbox.sshHostAlias || 'N/A'}</span>
                   </div>
                 </div>
               </button>
             ))}
           </div>
 
-          {/* Selected Sandbox Details - Technical Data Panel */}
           {!isDestroyMode && selectedSandbox && (
             <>
               <div className="panel p-6">
@@ -199,24 +214,42 @@ export default function SandboxList({
                     <button
                       onClick={async () => {
                         try {
-                          const res = await fetch(`/api/openshell/terminal/open?sandboxId=${encodeURIComponent(selectedSandbox)}`)
+                          const res = await fetch(`/api/openshell/terminal/introspect?sandboxId=${encodeURIComponent(selectedSandbox)}`)
                           const data = await res.json()
                           if (data.ok) {
-                            setTerminalMessage(`Terminal probe succeeded for ${selectedSandbox}: ${data.output || 'attached'}`)
+                            const attachCommand = data.attach?.command
+                              || (data.attach?.sshHostAlias ? `ssh ${data.attach.sshHostAlias}` : `openshell sandbox ssh-config ${selectedSandbox}`)
+                            const sshConfigBlock = data.attach?.sshConfig
+                              ? `
+
+SSH config:
+${data.attach.sshConfig}`
+                              : ''
+                            const sandboxPhase = data.sandbox?.phase || 'Unknown'
+                            const hostAlias = data.attach?.sshHostAlias || 'Unavailable'
+
+                            setTerminalMessage(
+                              [
+                                `OpenShell terminal attach for ${data.sandbox?.name || selectedSandbox}`,
+                                `Status: ${sandboxPhase}`,
+                                `Host alias: ${hostAlias}`,
+                                `Run locally: ${attachCommand}`,
+                                data.attached
+                                  ? 'Sandbox is live. Use the SSH alias above from your local terminal.'
+                                  : 'Sandbox is not running yet. Save the alias/config now, then attach after it reaches Running.',
+                                data.note || 'Embedded browser terminal is not available in this dashboard yet.'
+                              ].join('\n') + sshConfigBlock
+                            )
                           } else {
-                            const inspectRes = await fetch(`/api/openshell/terminal/introspect?sandboxId=${encodeURIComponent(selectedSandbox)}`)
-                            const inspectData = await inspectRes.json()
-                            setTerminalMessage(inspectData.ok
-                              ? `Terminal probe failed. Pod introspection for ${selectedSandbox}: containers=${(inspectData.containers || []).join(', ')} images=${(inspectData.images || []).join(', ')}`
-                              : (data.error || 'Failed to attach to OpenShell terminal.'))
+                            setTerminalMessage(data.error || 'Failed to resolve OpenShell terminal attach details.')
                           }
                         } catch (error) {
-                          setTerminalMessage('Failed to attach to OpenShell terminal.')
+                          setTerminalMessage('Failed to resolve OpenShell terminal attach details.')
                         }
                       }}
                       className="px-3 py-2 rounded-sm bg-[var(--background-tertiary)] text-[var(--foreground)] text-xs font-mono uppercase tracking-wider hover:border-[var(--nvidia-green)] border border-[var(--border-subtle)]"
                     >
-                      Attach to OpenShell Terminal
+                      Show OpenShell SSH Attach Details
                     </button>
                     <span className="text-[10px] text-[var(--foreground-dim)] font-mono">
                       LIVE
@@ -227,7 +260,7 @@ export default function SandboxList({
                 {(dashboardMessage || terminalMessage) && (
                   <div className="mb-4 space-y-2">
                     {dashboardMessage && <div className="rounded-sm border border-[var(--border-subtle)] bg-[var(--background-tertiary)] p-3 text-xs text-[var(--foreground-dim)]">{dashboardMessage}</div>}
-                    {terminalMessage && <div className="rounded-sm border border-[var(--border-subtle)] bg-[var(--background-tertiary)] p-3 text-xs text-[var(--foreground-dim)]">{terminalMessage}</div>}
+                    {terminalMessage && <div className="rounded-sm border border-[var(--border-subtle)] bg-[var(--background-tertiary)] p-3 text-xs text-[var(--foreground-dim)] whitespace-pre-wrap font-mono">{terminalMessage}</div>}
                   </div>
                 )}
 

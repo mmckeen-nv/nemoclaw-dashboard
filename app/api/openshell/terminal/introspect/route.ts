@@ -1,38 +1,59 @@
-import { NextResponse } from 'next/server'
-import { dockerExecInOpenShell, OPENSHELL_NAMESPACE } from '../../../../lib/openshellHost'
+import { NextResponse } from "next/server"
+import { inspectSandbox, isOpenShellTransportError } from "../../../../lib/openshellHost"
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const sandboxId = searchParams.get('sandboxId')
+    const sandboxId = searchParams.get("sandboxId")
 
     if (!sandboxId) {
-      return NextResponse.json({ error: 'sandboxId is required' }, { status: 400 })
+      return NextResponse.json({ error: "sandboxId is required" }, { status: 400 })
     }
 
-    const result = await dockerExecInOpenShell(
-      `kubectl -n ${OPENSHELL_NAMESPACE} get pod ${sandboxId} -o json`
-    )
-
-    const pod = JSON.parse(result.stdout)
-    const containerNames = Array.isArray(pod?.spec?.containers) ? pod.spec.containers.map((c: any) => c.name) : []
-    const containerImages = Array.isArray(pod?.spec?.containers) ? pod.spec.containers.map((c: any) => c.image) : []
-    const statusNames = Array.isArray(pod?.status?.containerStatuses) ? pod.status.containerStatuses.map((c: any) => c.name) : []
+    const result = await inspectSandbox(sandboxId)
+    const normalizedPhase = result.phase?.toLowerCase() ?? "unknown"
+    const attached = ["running", "ready"].includes(normalizedPhase)
 
     return NextResponse.json({
       ok: true,
       sandboxId,
-      containers: containerNames,
-      images: containerImages,
-      runningStatuses: statusNames,
-      raw: result.stdout.trim(),
-      stderr: result.stderr.trim(),
-      note: 'Pod/container introspection succeeded. Use this to select the right exec target for terminal attach.'
+      attached,
+      sandbox: {
+        id: result.id,
+        name: result.name,
+        namespace: result.namespace,
+        phase: result.phase,
+      },
+      attach: {
+        transport: "ssh",
+        sshHostAlias: result.sshHostAlias,
+        command: `ssh ${result.sshHostAlias}`,
+        sshConfig: result.sshConfig,
+      },
+      output: result.rawDetails,
+      note: attached
+        ? "Live OpenShell SSH attach metadata resolved for this sandbox. Use the generated host alias instead of pod/container exec assumptions."
+        : "Sandbox is not currently attachable. SSH attach metadata resolved, but terminal attach will only work once the sandbox reaches Ready or Running.",
     })
   } catch (error) {
-    return NextResponse.json({
-      ok: false,
-      error: error instanceof Error ? error.message : 'Failed to introspect sandbox pod'
-    }, { status: 500 })
+    if (isOpenShellTransportError(error)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          available: false,
+          error: "OpenShell gateway is unreachable. Start the upstream gateway before attaching to a sandbox terminal.",
+          detail: error instanceof Error ? error.message : "OpenShell gateway unavailable",
+        },
+        { status: 503 }
+      )
+    }
+
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to inspect sandbox attach target",
+      },
+      { status: 500 }
+    )
   }
 }
